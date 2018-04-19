@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: EC2 snapshots + rotation system
+
+Parameters:
+
+  BuckedWithLambdaFunction:
+    Description: Name of the bucket where Lambda funciton is located
+    Type: String
+
+  PathToLambdaFile:
+    Description: Path to the file within that S3 bucket
+    Type: String
+
+Resources:
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+          Sid: ""
+      Path: "/"
+      Policies:
+      - PolicyName: "ec2-backup-policy"
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "logs:*"
+            Resource:
+            - "arn:aws:logs:*:*:*"
+          - Effect: "Allow"
+            Action:
+            - "ec2:Describe*"
+            Resource:
+            - "*"
+          - Effect: "Allow"
+            Action:
+            - "ec2:Describe*"
+            - "ec2:CreateSnapshot"
+            - "ec2:DeleteSnapshot"
+            - "ec2:ModifySnapshotAttribute"
+            - "ec2:ResetSnapshotAttribute"
+            - "ec2:CreateTags"
+            Resource:
+            - "*"
+
+  BackupLambda:
+    Type: "AWS::Lambda::Function"
+    DependsOn:
+      - Role
+    Properties:
+      Handler: "backup_lambda.lambda_handler"
+      Role:
+        Fn::Join: [ "", [ "arn:aws:iam::", Ref: "AWS::AccountId", ":role/", Ref: Role] ]
+      Runtime: "python2.7"
+      MemorySize: 128
+      Timeout: 25
+      Code:
+        S3Bucket:
+          Ref: BuckedWithLambdaFunction
+        S3Key:
+          Ref: PathToLambdaFile
+
+
+  LambdaScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "LambdaScheduledRule"
+      ScheduleExpression: "rate(1 day)"
+      State: "ENABLED"
+      Targets:
+        -
+          Arn:
+            Fn::GetAtt:
+              - "BackupLambda"
+              - "Arn"
+          Id: "ScheduleLambda"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        Ref: "BackupLambda"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - "LambdaScheduledRule"
+          - "Arn"
