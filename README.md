@@ -46,7 +46,7 @@ terraform apply terraform.tfplan
 
 ### Via CloudFormation
 
-TBD
+Included
 
 ### Manually
 
